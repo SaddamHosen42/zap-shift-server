@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -61,7 +61,18 @@ async function run() {
                 res.status(500).json({ error: 'Failed to fetch parcels' });
             }
         });
-
+        //delete parcel by id
+        app.delete('/parcels/:id', async (req, res) => {
+            try {
+                const id = req.params.id;
+                const query = { _id: new ObjectId(id) };
+                const result = await parcelCollection.deleteOne(query);
+                res.send(result);
+            } catch (error) {
+                console.error('Error deleting parcel:', error);
+                res.status(500).json({ error: 'Failed to delete parcel' });
+            }
+        });
 
 
 
