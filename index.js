@@ -3,6 +3,8 @@ const express = require('express');
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
+const Stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); // Ensure you have set your Stripe secret key in .env
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -28,7 +30,7 @@ async function run() {
 
         const database = client.db('parcelDeliveryDB');
         const parcelCollection = database.collection('parcels');
-
+        const paymentCollection = database.collection('payments');
 
 
         //insert parcel
@@ -43,7 +45,7 @@ async function run() {
             }
         });
 
-        //all parcels or parcels by email,sorted by latest
+        //Get all parcels or parcels by email,sorted by latest
         app.get('/parcels', async (req, res) => {
             try {
                 const email = req.query.email;
@@ -61,6 +63,24 @@ async function run() {
                 res.status(500).json({ error: 'Failed to fetch parcels' });
             }
         });
+
+        //get parcel by id
+        app.get('/parcels/:id', async (req, res) => {
+            try {
+                const id = req.params.id;
+                const query = { _id: new ObjectId(id) };
+                const parcel = await parcelCollection.findOne(query);
+                if (!parcel) {
+                    return res.status(404).json({ error: 'Parcel not found' });
+                }
+                res.send(parcel);
+            } catch (error) {
+                console.error('Error fetching parcel:', error);
+                res.status(500).json({ error: 'Failed to fetch parcel' });
+            }
+        });
+
+
         //delete parcel by id
         app.delete('/parcels/:id', async (req, res) => {
             try {
@@ -74,6 +94,62 @@ async function run() {
             }
         });
 
+
+
+
+
+        //payment inient
+        app.post('/create-payment-intent', async (req, res) => {
+
+            const amountInCents = req.body.amountInCents;
+            try {
+                const paymentIntent = await Stripe.paymentIntents.create({
+                    amount: amountInCents, // Amount in cents
+                    currency: 'usd', // Currency code
+                    payment_method_types: ['card'], // Specify the payment method types you want to accept
+                });
+                res.json({ clientSecret: paymentIntent.client_secret });
+            } catch (error) {
+                console.error('Error creating payment intent:', error);
+                res.status(500).json({ error: 'Failed to create payment intent' });
+            }
+        })
+
+
+        //post payments
+        app.post('/payments', async (req, res) => {
+            try {
+                const { parcelId, amount, paymentMethodId, email, transactionId } = req.body;
+                //update parcel status to paid
+                const updateResult = await parcelCollection.updateOne(
+                    { _id: new ObjectId(parcelId) },
+                    { 
+                        $set: { 
+                            payment_status: 'paid'
+                        } 
+                    }
+                );
+                if (updateResult.modifiedCount === 0) {
+                    return res.status(404).json({ error: 'Parcel not found or already paid' });
+                }
+                //insert payment details
+                const paymentDoc = {
+                    parcelId,
+                    amount,
+                    paymentMethodId,
+                    email,
+                    transactionId,
+                    paid_at_string: new Date().toISOString(), // Store the date as a string
+                    paid_at: new Date(), // Store the date as a Date object
+                };
+                const paymentResult = await paymentCollection.insertOne(paymentDoc);
+                res.json({ success: true, paymentId: paymentResult.insertedId });
+
+            } catch (error) {
+                console.error('Error processing payment:', error);
+                res.status(500).json({ error: 'Failed to process payment' });
+            }
+        })
 
 
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
