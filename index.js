@@ -98,7 +98,7 @@ async function run() {
 
 
 
-        //payment inient
+        //payment intent
         app.post('/create-payment-intent', async (req, res) => {
 
             const amountInCents = req.body.amountInCents;
@@ -151,6 +151,22 @@ async function run() {
             }
         })
 
+
+        // Get all payments or payments by email
+        app.get('/payments', async (req, res) => {
+            try {
+                const email = req.query.email;
+                const query = {};
+                if (email) {
+                    query.email = email;
+                }
+                const payments = await paymentCollection.find(query).toArray();
+                res.json(payments);
+            } catch (error) {
+                console.error('Error fetching payments:', error);
+                res.status(500).json({ error: 'Failed to fetch payments' });
+            }
+        });
 
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
