@@ -224,6 +224,40 @@ async function run() {
             }
         });
 
+        
+        app.patch("/parcels/:id/assign", async (req, res) => {
+            const parcelId = req.params.id;
+            const { riderId, riderName } = req.body;
+
+            try {
+                // Update parcel
+                await parcelCollection.updateOne(
+                    { _id: new ObjectId(parcelId) },
+                    {
+                        $set: {
+                            delivery_status: "in_transit",
+                            assigned_rider_id: riderId,
+                            assigned_rider_name: riderName,
+                        },
+                    }
+                );
+
+                // Update rider
+                await ridersCollection.updateOne(
+                    { _id: new ObjectId(riderId) },
+                    {
+                        $set: {
+                            work_status: "in_delivery",
+                        },
+                    }
+                );
+
+                res.send({ message: "Rider assigned" });
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: "Failed to assign rider" });
+            }
+        });
 
         //delete parcel by id
         app.delete('/parcels/:id', verifyJWT, async (req, res) => {
@@ -299,7 +333,7 @@ async function run() {
         });
 
         // GET: abilable riders
-                app.get("/riders/available", async (req, res) => {
+        app.get("/riders/available", async (req, res) => {
             const { district } = req.query;
 
             try {
