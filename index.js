@@ -20,28 +20,6 @@ admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
 
-//coustom middleware to check Firebase authentication
-const verifyJWT = async (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).send({ message: 'Unauthorized access' });
-    }
-    const token = authHeader.split(' ')[1];
-    try {
-        const decoded = await admin.auth().verifyIdToken(token);
-        req.decoded = decoded;
-        next();
-    } catch (error) {
-        res.status(401).send({ message: 'Unauthorized access' });
-    }
-}
-
-const verifyEmail = (req, res, next) => {
-    if (req.query.email !== req.decoded.email) {
-        return res.status(403).send({ message: 'Forbidden access' });
-    }
-    next();
-}
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.bejl412.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -63,10 +41,42 @@ async function run() {
         const paymentCollection = database.collection('payments');
         const ridersCollection = database.collection('riders');
 
+        //coustom middleware to check Firebase authentication
+        const verifyJWT = async (req, res, next) => {
+            const authHeader = req.headers.authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                return res.status(401).send({ message: 'Unauthorized access' });
+            }
+            const token = authHeader.split(' ')[1];
+            try {
+                const decoded = await admin.auth().verifyIdToken(token);
+                req.decoded = decoded;
+                next();
+            } catch (error) {
+                res.status(401).send({ message: 'Unauthorized access' });
+            }
+        }
 
+        const verifyEmail = (req, res, next) => {
+            if (req.query.email !== req.decoded.email) {
+                return res.status(403).send({ message: 'Forbidden access' });
+            }
+            next();
+        }
+        const verifyAdmin = async (req, res, next) => {
+            const email = req.decoded.email;
+            const query = { email }
+            const user = await usersCollection.findOne(query);
+            if (!user || user.role !== 'admin') {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
+            next();
+        }
 
+        //API
+        
         //search users by email
-        app.get("/users/search", async (req, res) => {
+        app.get("/users/search", verifyJWT, verifyAdmin, async (req, res) => {
             const emailQuery = req.query.email;
             if (!emailQuery) {
                 return res.status(400).send({ message: "Missing email query" });
@@ -87,7 +97,7 @@ async function run() {
         });
 
         //get user role by email
-        app.get('/users/:email/role', async (req, res) => {
+        app.get('/users/:email/role', verifyJWT, verifyAdmin, async (req, res) => {
             try {
                 const email = req.params.email;
                 if (!email) {
@@ -135,7 +145,7 @@ async function run() {
         });
 
         //update user role
-        app.patch("/users/:id/role", async (req, res) => {
+        app.patch("/users/:id/role", verifyJWT, async (req, res) => {
             const { id } = req.params;
             const { role } = req.body;
 
@@ -168,7 +178,7 @@ async function run() {
         });
 
         //Get all parcels or parcels by email,sorted by latest
-        app.get('/parcels', verifyJWT, async (req, res) => {
+        app.get('/parcels', verifyJWT, verifyEmail, async (req, res) => {
             try {
                 const email = req.query.email;
                 const query = {};
@@ -187,7 +197,7 @@ async function run() {
         });
 
         //get parcel by id
-        app.get('/parcels/:id', async (req, res) => {
+        app.get('/parcels/:id', verifyJWT, async (req, res) => {
             try {
                 const id = req.params.id;
                 const query = { _id: new ObjectId(id) };
@@ -204,7 +214,7 @@ async function run() {
 
 
         //delete parcel by id
-        app.delete('/parcels/:id', async (req, res) => {
+        app.delete('/parcels/:id', verifyJWT, async (req, res) => {
             try {
                 const id = req.params.id;
                 const query = { _id: new ObjectId(id) };
@@ -229,7 +239,7 @@ async function run() {
         });
 
         // GET: All pending riders
-        app.get("/riders/pending", async (req, res) => {
+        app.get("/riders/pending", verifyJWT, verifyAdmin, async (req, res) => {
             try {
                 const pendingRiders = await ridersCollection
                     .find({ status: "pending" })
@@ -242,7 +252,7 @@ async function run() {
         });
 
         // GET: All active riders
-        app.get("/riders/active", async (req, res) => {
+        app.get("/riders/active", verifyJWT, verifyAdmin, async (req, res) => {
             try {
                 const result = await ridersCollection.find({ status: "active" }).toArray();
                 res.send(result);
@@ -253,7 +263,7 @@ async function run() {
         });
 
         // PATCH: Update rider status
-        app.patch("/riders/:id/status", async (req, res) => {
+        app.patch("/riders/:id/status", verifyJWT, verifyAdmin, async (req, res) => {
             try {
                 const { id } = req.params;
                 const { status, email } = req.body;
