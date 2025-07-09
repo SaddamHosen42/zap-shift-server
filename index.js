@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
-
+const admin = require("firebase-admin");
 const Stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); // Ensure you have set your Stripe secret key in .env
 
 const app = express();
@@ -13,6 +13,35 @@ app.use(cors());
 app.use(express.json());
 
 
+
+const serviceAccount = require("./profast-firebase-adminsdk.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+//coustom middleware to check Firebase authentication
+const verifyJWT =async (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader||!authHeader.startsWith('Bearer ')) {
+        return res.status(401).send({ message: 'Unauthorized access' });
+    }
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = await admin.auth().verifyIdToken(token);
+        req.decoded = decoded;
+        next();
+    } catch (error) {
+        res.status(401).send({ message: 'Unauthorized access' });
+    }
+}
+
+const verifyEmail=(req, res, next) => {
+    if(req.query.email !== req.decoded.email){
+        return res.status(403).send({ message: 'Forbidden access' });
+    }
+    next();
+}
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.bejl412.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -37,13 +66,27 @@ async function run() {
         // Create a new user
         app.post('/users', async (req, res) => {
             try {
+                const email = req.body.email;
+                const userExists = await usersCollection.findOne({ email });
+                if (userExists) {
+                    //update last login
+                    const updateResult = await usersCollection.updateOne(
+                        { email: email },
+                        {
+                            $set: {
+                                last_log_in: new Date().toISOString() // Store the date as a string
+                            }
+                        }
+                    );
+                    if (updateResult.modifiedCount === 0) {
+                        return res.status(500).json({ error: 'Failed to update last login' });
+                    }
+                    return res.status(200).json({ message: 'User already exists', inserted: false });
+                }
                 const user = req.body;
                 const result = await usersCollection.insertOne(user);
                 res.send(result);
-                const userExists = await usersCollection.findOne({ email});
-                if (userExists) {
-                    return res.status(200).json({ error: 'User already exists',inserted: false });
-                }
+
             } catch (error) {
                 console.error('Error inserting user:', error);
                 res.status(500).json({ error: 'Failed to insert user' });
@@ -64,7 +107,7 @@ async function run() {
         });
 
         //Get all parcels or parcels by email,sorted by latest
-        app.get('/parcels', async (req, res) => {
+        app.get('/parcels',verifyJWT, async (req, res) => {
             try {
                 const email = req.query.email;
                 const query = {};
@@ -141,10 +184,10 @@ async function run() {
                 //update parcel status to paid
                 const updateResult = await parcelCollection.updateOne(
                     { _id: new ObjectId(parcelId) },
-                    { 
-                        $set: { 
+                    {
+                        $set: {
                             payment_status: 'paid'
-                        } 
+                        }
                     }
                 );
                 if (updateResult.modifiedCount === 0) {
@@ -171,7 +214,7 @@ async function run() {
 
 
         // Get all payments or payments by email
-        app.get('/payments', async (req, res) => {
+        app.get('/payments', verifyJWT,verifyEmail, async (req, res) => {
             try {
                 const email = req.query.email;
                 const query = {};
