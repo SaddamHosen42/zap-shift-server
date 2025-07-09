@@ -61,7 +61,48 @@ async function run() {
         const usersCollection = database.collection('users');
         const parcelCollection = database.collection('parcels');
         const paymentCollection = database.collection('payments');
-        const ridersCollection = db.collection('riders');
+        const ridersCollection = database.collection('riders');
+
+
+
+        //search users by email
+        app.get("/users/search", async (req, res) => {
+            const emailQuery = req.query.email;
+            if (!emailQuery) {
+                return res.status(400).send({ message: "Missing email query" });
+            }
+            const regex = new RegExp(emailQuery, "i"); // case-insensitive partial match
+
+            try {
+                const users = await usersCollection
+                    .find({ email: { $regex: regex } })
+                    // .project({ email: 1, createdAt: 1, role: 1 })
+                    .limit(10)
+                    .toArray();
+                res.send(users);
+            } catch (error) {
+                console.error("Error searching users", error);
+                res.status(500).send({ message: "Error searching users" });
+            }
+        });
+
+        //get user role by email
+        app.get('/users/:email/role', async (req, res) => {
+            try {
+                const email = req.params.email;
+                if (!email) {
+                    return res.status(400).send({ message: 'Email is required' });
+                }
+                const user = await usersCollection.findOne({ email });
+                if (!user) {
+                    return res.status(404).send({ message: 'User not found' });
+                }
+                res.send({ role: user.role || 'user' });
+            } catch (error) {
+                console.error('Error getting user role:', error);
+                res.status(500).send({ message: 'Failed to get role' });
+            }
+        });
 
         // Create a new user
         app.post('/users', async (req, res) => {
@@ -93,6 +134,26 @@ async function run() {
             }
         });
 
+        //update user role
+        app.patch("/users/:id/role", async (req, res) => {
+            const { id } = req.params;
+            const { role } = req.body;
+
+            if (!["admin", "user"].includes(role)) {
+                return res.status(400).send({ message: "Invalid role" });
+            }
+
+            try {
+                const result = await usersCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: { role } }
+                );
+                res.send({ message: `User role updated to ${role}`, result });
+            } catch (error) {
+                console.error("Error updating user role", error);
+                res.status(500).send({ message: "Failed to update user role" });
+            }
+        });
 
         //insert parcel
         app.post('/parcels', async (req, res) => {
@@ -195,12 +256,19 @@ async function run() {
         app.patch("/riders/:id/status", async (req, res) => {
             try {
                 const { id } = req.params;
-                const { status } = req.body;
+                const { status, email } = req.body;
 
                 const query = { _id: new ObjectId(id) };
                 const updateDoc = { $set: { status } };
 
                 const result = await ridersCollection.updateOne(query, updateDoc);
+                //update user role for accpeting rider
+                if (status === 'active') {
+                    await usersCollection.updateOne(
+                        { email: email },
+                        { $set: { role: 'rider' } }
+                    );
+                }
                 res.send(result);
             } catch (error) {
                 console.error("❌ Failed to update rider status:", error);
