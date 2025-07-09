@@ -327,7 +327,7 @@ async function run() {
             }
         });
 
-        app.patch("/parcels/:id/status", async (req, res) => {
+        app.patch("/parcels/:id/status", verifyJWT, async (req, res) => {
             const parcelId = req.params.id;
             const { status } = req.body;
             const updatedDoc = {
@@ -342,7 +342,7 @@ async function run() {
             }
 
             try {
-                const result = await parcelsCollection.updateOne(
+                const result = await parcelCollection.updateOne(
                     { _id: new ObjectId(parcelId) },
                     {
                         $set: updatedDoc
@@ -352,6 +352,20 @@ async function run() {
             } catch (error) {
                 res.status(500).send({ message: "Failed to update status" });
             }
+        });
+
+        app.patch("/parcels/:id/cashout", async (req, res) => {
+            const id = req.params.id;
+            const result = await parcelsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        cashout_status: "cashed_out",
+                        cashed_out_at: new Date()
+                    }
+                }
+            );
+            res.send(result);
         });
         //delete parcel by id
         app.delete('/parcels/:id', verifyJWT, async (req, res) => {
