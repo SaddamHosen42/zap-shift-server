@@ -194,7 +194,7 @@ async function run() {
                     sort: { creation_date: -1 }, // Newest first
                 };
 
-                const parcels = await parcelsCollection.find(query, options).toArray();
+                const parcels = await parcelCollection.find(query, options).toArray();
                 res.send(parcels);
             } catch (error) {
                 console.error('Error fetching rider tasks:', error);
@@ -203,7 +203,7 @@ async function run() {
         });
 
         // GET: Load completed parcel deliveries for a rider
-        app.get('/rider/completed-parcels', verifyFBToken, verifyRider, async (req, res) => {
+        app.get('/rider/completed-parcels', verifyJWT, verifyRider, async (req, res) => {
             try {
                 const email = req.query.email;
 
@@ -222,7 +222,7 @@ async function run() {
                     sort: { creation_date: -1 }, // Latest first
                 };
 
-                const completedParcels = await parcelsCollection.find(query, options).toArray();
+                const completedParcels = await parcelCollection.find(query, options).toArray();
 
                 res.send(completedParcels);
 
@@ -327,6 +327,32 @@ async function run() {
             }
         });
 
+        app.patch("/parcels/:id/status", async (req, res) => {
+            const parcelId = req.params.id;
+            const { status } = req.body;
+            const updatedDoc = {
+                delivery_status: status
+            }
+
+            if (status === 'in_transit') {
+                updatedDoc.picked_at = new Date().toISOString()
+            }
+            else if (status === 'delivered') {
+                updatedDoc.delivered_at = new Date().toISOString()
+            }
+
+            try {
+                const result = await parcelsCollection.updateOne(
+                    { _id: new ObjectId(parcelId) },
+                    {
+                        $set: updatedDoc
+                    }
+                );
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to update status" });
+            }
+        });
         //delete parcel by id
         app.delete('/parcels/:id', verifyJWT, async (req, res) => {
             try {
