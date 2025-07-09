@@ -74,7 +74,7 @@ async function run() {
         }
 
         //API
-        
+
         //search users by email
         app.get("/users/search", verifyJWT, verifyAdmin, async (req, res) => {
             const emailQuery = req.query.email;
@@ -97,7 +97,7 @@ async function run() {
         });
 
         //get user role by email
-        app.get('/users/:email/role', verifyJWT, verifyAdmin, async (req, res) => {
+        app.get('/users/:email/role', verifyJWT, async (req, res) => {
             try {
                 const email = req.params.email;
                 if (!email) {
@@ -178,21 +178,33 @@ async function run() {
         });
 
         //Get all parcels or parcels by email,sorted by latest
-        app.get('/parcels', verifyJWT, verifyEmail, async (req, res) => {
+        app.get('/parcels', verifyJWT, async (req, res) => {
             try {
-                const email = req.query.email;
-                const query = {};
-                // console.log('Querymail:',req.query);
+                const { email, payment_status, delivery_status } = req.query;
+                let query = {}
                 if (email) {
-                    query.created_by = email;
+                    query = { created_by: email }
                 }
 
+                if (payment_status) {
+                    query.payment_status = payment_status
+                }
 
-                const parcels = await parcelCollection.find(query).sort({ creation_date: -1 }).toArray();
-                res.json(parcels);
+                if (delivery_status) {
+                    query.delivery_status = delivery_status
+                }
+
+                const options = {
+                    sort: { createdAt: -1 }, // Newest first
+                };
+
+                console.log('parcel query', req.query, query)
+
+                const parcels = await parcelCollection.find(query, options).toArray();
+                res.send(parcels);
             } catch (error) {
                 console.error('Error fetching parcels:', error);
-                res.status(500).json({ error: 'Failed to fetch parcels' });
+                res.status(500).send({ message: 'Failed to get parcels' });
             }
         });
 
@@ -285,6 +297,30 @@ async function run() {
                 res.status(500).send({ message: "Failed to update rider status" });
             }
         });
+
+        // GET: abilable riders
+                app.get("/riders/available", async (req, res) => {
+            const { district } = req.query;
+
+            try {
+                const riders = await ridersCollection
+                    .find({
+                        district,
+                        // status: { $in: ["approved", "active"] },
+                        // work_status: "available",
+                    })
+                    .toArray();
+
+                res.send(riders);
+            } catch (err) {
+                res.status(500).send({ message: "Failed to load riders" });
+            }
+        });
+
+
+
+
+
 
         // POST: Add tracking log
         app.post("/tracking", async (req, res) => {
