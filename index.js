@@ -29,8 +29,26 @@ async function run() {
     try {
 
         const database = client.db('parcelDeliveryDB');
+        const usersCollection = database.collection('users');
         const parcelCollection = database.collection('parcels');
         const paymentCollection = database.collection('payments');
+
+
+        // Create a new user
+        app.post('/users', async (req, res) => {
+            try {
+                const user = req.body;
+                const result = await usersCollection.insertOne(user);
+                res.send(result);
+                const userExists = await usersCollection.findOne({ email});
+                if (userExists) {
+                    return res.status(200).json({ error: 'User already exists',inserted: false });
+                }
+            } catch (error) {
+                console.error('Error inserting user:', error);
+                res.status(500).json({ error: 'Failed to insert user' });
+            }
+        });
 
 
         //insert parcel
