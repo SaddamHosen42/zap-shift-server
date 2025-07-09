@@ -17,13 +17,13 @@ app.use(express.json());
 const serviceAccount = require("./profast-firebase-adminsdk.json");
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+    credential: admin.credential.cert(serviceAccount)
 });
 
 //coustom middleware to check Firebase authentication
-const verifyJWT =async (req, res, next) => {
+const verifyJWT = async (req, res, next) => {
     const authHeader = req.headers.authorization;
-    if (!authHeader||!authHeader.startsWith('Bearer ')) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).send({ message: 'Unauthorized access' });
     }
     const token = authHeader.split(' ')[1];
@@ -36,8 +36,8 @@ const verifyJWT =async (req, res, next) => {
     }
 }
 
-const verifyEmail=(req, res, next) => {
-    if(req.query.email !== req.decoded.email){
+const verifyEmail = (req, res, next) => {
+    if (req.query.email !== req.decoded.email) {
         return res.status(403).send({ message: 'Forbidden access' });
     }
     next();
@@ -61,7 +61,7 @@ async function run() {
         const usersCollection = database.collection('users');
         const parcelCollection = database.collection('parcels');
         const paymentCollection = database.collection('payments');
-
+        const ridersCollection = db.collection('riders');
 
         // Create a new user
         app.post('/users', async (req, res) => {
@@ -107,7 +107,7 @@ async function run() {
         });
 
         //Get all parcels or parcels by email,sorted by latest
-        app.get('/parcels',verifyJWT, async (req, res) => {
+        app.get('/parcels', verifyJWT, async (req, res) => {
             try {
                 const email = req.query.email;
                 const query = {};
@@ -155,6 +155,80 @@ async function run() {
             }
         });
 
+        // POST: Add new rider
+        app.post('/riders', async (req, res) => {
+            try {
+                const rider = req.body;
+                const result = await ridersCollection.insertOne(rider);
+                res.send(result);
+            } catch (error) {
+                console.error("❌ Failed to add rider:", error);
+                res.status(500).send({ message: "Failed to add rider" });
+            }
+        });
+
+        // GET: All pending riders
+        app.get("/riders/pending", async (req, res) => {
+            try {
+                const pendingRiders = await ridersCollection
+                    .find({ status: "pending" })
+                    .toArray();
+                res.send(pendingRiders);
+            } catch (error) {
+                console.error("❌ Failed to load pending riders:", error);
+                res.status(500).send({ message: "Failed to load pending riders" });
+            }
+        });
+
+        // GET: All active riders
+        app.get("/riders/active", async (req, res) => {
+            try {
+                const result = await ridersCollection.find({ status: "active" }).toArray();
+                res.send(result);
+            } catch (error) {
+                console.error("❌ Failed to load active riders:", error);
+                res.status(500).send({ message: "Failed to load active riders" });
+            }
+        });
+
+        // PATCH: Update rider status
+        app.patch("/riders/:id/status", async (req, res) => {
+            try {
+                const { id } = req.params;
+                const { status } = req.body;
+
+                const query = { _id: new ObjectId(id) };
+                const updateDoc = { $set: { status } };
+
+                const result = await ridersCollection.updateOne(query, updateDoc);
+                res.send(result);
+            } catch (error) {
+                console.error("❌ Failed to update rider status:", error);
+                res.status(500).send({ message: "Failed to update rider status" });
+            }
+        });
+
+        // POST: Add tracking log
+        app.post("/tracking", async (req, res) => {
+            try {
+                const { tracking_id, parcel_id, status, message, updated_by = '' } = req.body;
+
+                const log = {
+                    tracking_id,
+                    parcel_id: parcel_id ? new ObjectId(parcel_id) : undefined,
+                    status,
+                    message,
+                    time: new Date(),
+                    updated_by,
+                };
+
+                const result = await trackingCollection.insertOne(log);
+                res.send({ success: true, insertedId: result.insertedId });
+            } catch (error) {
+                console.error("❌ Failed to add tracking log:", error);
+                res.status(500).send({ message: "Failed to add tracking log" });
+            }
+        });
 
 
 
@@ -214,7 +288,7 @@ async function run() {
 
 
         // Get all payments or payments by email
-        app.get('/payments', verifyJWT,verifyEmail, async (req, res) => {
+        app.get('/payments', verifyJWT, verifyEmail, async (req, res) => {
             try {
                 const email = req.query.email;
                 const query = {};
